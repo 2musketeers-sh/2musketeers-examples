@@ -1,0 +1,41 @@
+##
+# Set the base image
+##
+ARG DOCKER_RUN_IMAGE
+FROM ${DOCKER_RUN_IMAGE}
+
+##
+# This next section create all the necessary groups and users with the correct uid and gids
+#  NOTE: The commands run may be base image dependent! (eg useradd vs adduser)
+##
+ARG LOCAL_UID=1000
+ARG LOCAL_GID=1000
+ARG LOCAL_USERNAME=app
+ARG DOCKER_GID=999
+RUN addgroup --gid ${DOCKER_GID} docker
+RUN addgroup --gid ${LOCAL_GID} ${LOCAL_USERNAME}
+RUN useradd --create-home -g ${LOCAL_GID} -G docker,${DOCKER_GID}  -u ${LOCAL_UID} ${LOCAL_USERNAME}
+RUN if [ "x$(getent group docker | cut -d: -f3)" != "x${DOCKER_GID}" ]; then \
+    addgroup --gid ${DOCKER_GID} docker2 2>&1 ; \
+    addgroup ${LOCAL_USERNAME} docker2 2>&1 ; \
+fi
+
+###
+# Add any dependencies necessary to run your tests, build, or deploy.
+##
+#ENV DEBIAN_FRONTEND noninteractive
+#RUN apt-get update && \
+#   DEBIAN_FRONTEND=noninteractive apt-get install -y \
+#	docker  \
+#	jq  \
+#	build-essential  \
+#	--no-install-recommends \
+#   --no-install-suggests \
+#	&& rm -rf /root/.cache /tmp/* /var/lib/apt/lists/* /var/tmp/*
+# RUN
+##
+
+##
+# Run the container as the same calling user
+##
+USER ${LOCAL_USERNAME}
