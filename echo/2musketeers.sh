@@ -1,4 +1,10 @@
 #!/bin/bash
+##################################################################
+#
+# This script is a patern and is designed to customised per use.
+#    see - https://2musketeers.sh
+#
+##################################################################
 
 ##
 # Allow the parent script to run as is. This, assumes that the current environment has all the necessary dependencies
@@ -8,6 +14,18 @@
 # The base Docker image to wrap the script with
 ##
 : ${DOCKER_RUN_IMAGE:="debian:jessie-slim"}
+##
+# Hide the docker build output unless there is an error
+##
+: ${DOCKER_BUILD_VERBOSE:="false"}
+##
+# When CONTAINER_PREFIX is set to SCRIPT, a new build container will be built for 
+# each calling script. Although Docker will cache shared layers, lots of image
+# names will be created. 
+# Setting this to something of a broader "scope", such as the apps checkout 
+# directory name, will produce 1 build container for all scripts.
+##
+: ${CONTAINER_PREFIX:=${SCRIPT}}
 
 ##
 # Function to detect if we are running in a container.
@@ -90,12 +108,18 @@ EOF
 
     ##
     # Build the container. Remember, Docker is smart about caching layers so the above will likely only be built once!
-    #
+    # Output is only shown on error
     # NOTE: This example "scopes" the container to the calling script name. This could easily be changed to APP_NAME or the
     # calling directory name to prevent a new container being created for each shell script
     ##
-    docker build -t "${SCRIPT}_docker:latest"  -f "${t_dockerfile}" .
-
+    DOCKER_BUILD_OUT=$(docker build -t "${CONTAINER_PREFIX}_docker:latest"  -f "${t_dockerfile}" .) || \
+     { ERRCODE=$?; echo "${DOCKER_BUILD_OUT}"; exit $ERRCODE; }
+    
+    ##
+    # Show the output if needed
+    ##
+    [ "x${DOCKER_BUILD_VERBOSE}" != "xfalse" ] && echo "${DOCKER_BUILD_OUT}"
+    
     ##
     # Run docker and call the parent script..
     ##
@@ -103,7 +127,7 @@ EOF
       -v "${DIR}:${DIR}" \
       --env-file <( env| cut -f1 -d= ) \
       --workdir "${PWD}" \
-      "${SCRIPT}_docker:latest" \
+      "${CONTAINER_PREFIX}_docker:latest" \
       "${DIR}/${SCRIPT}" \
       "$@"
 }

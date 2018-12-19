@@ -8,5 +8,10 @@ This is a simple example that echos "I'm in docker! I am <your username>".
 ./run_me.sh
 ```
 
+Run with docker build output
+```sh
+DOCKER_BUILD_VERBOSE=true ./run_me.sh
+```
+
 **run_me.sh** - This is the script that runs in docker
 **2musketeers.sh** - This script wraps the caller script and runs it in a Docker container
