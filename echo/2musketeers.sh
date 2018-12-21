@@ -1,7 +1,7 @@
 #!/bin/bash
 ##################################################################
 #
-# This script is a patern and is designed to customised per use.
+# This script is a pattern and is designed to customised per use.
 #    see - https://2musketeers.sh
 #
 ##################################################################
@@ -14,10 +14,6 @@
 # The base Docker image to wrap the script with
 ##
 : ${DOCKER_RUN_IMAGE:="debian:jessie-slim"}
-##
-# Hide the docker build output unless there is an error
-##
-: ${DOCKER_BUILD_VERBOSE:="false"}
 ##
 # When CONTAINER_PREFIX is set to SCRIPT, a new build container will be built for 
 # each calling script. Although Docker will cache shared layers, lots of image
@@ -35,6 +31,16 @@ function is_container () {
   grep -qE '/docker/|/lxc/' /proc/1/cgroup
   echo "$?"
 }
+
+##
+# Detect whether we are running in an interactive shell. This affects whether we
+# add the docker run '-t' option.
+#    - https://www.gnu.org/software/bash/manual/html_node/Is-this-Shell-Interactive_003f.html
+##
+case "$-" in
+*i*)	DOCKER_RUN_OPTS="${DOCKER_RUN_OPTS} -t " ;;
+esac
+
 
 ##
 # Magic time:
@@ -59,7 +65,6 @@ function docker_run () {
   local LOCAL_UID=$(id -u)
   local LOCAL_GID=$(id -g)
   local LOCAL_USERNAME="${USER}"
-  local DOCKER_GID=$(getent group docker | cut -d: -f3)
 
   ##
   # create a temporary Dockerfile with....
@@ -75,16 +80,14 @@ function docker_run () {
     ###
     # Add any dependencies necessary to run your tests, build, or deploy.
     ##
-    #ENV DEBIAN_FRONTEND noninteractive
-    #RUN apt-get update && \
-    #   DEBIAN_FRONTEND=noninteractive apt-get install -y \
-    #	docker  \
+    #RUN export  DEBIAN_FRONTEND=noninteractive ;  apt-get update && \
+    # apt-get install -y \
     #	jq  \
     #	build-essential  \
     #	--no-install-recommends \
-    #   --no-install-suggests \
+    # --no-install-suggests \
+    # && apt-get -y clean
     #	&& rm -rf /root/.cache /tmp/* /var/lib/apt/lists/* /var/tmp/*
-    # RUN
     ##
 
 
@@ -92,13 +95,8 @@ function docker_run () {
     # This next section create all the necessary groups and users with the correct uid and gids
     #  NOTE: The commands run may be base image dependent! (eg useradd vs adduser)
     ##
-    RUN addgroup --gid ${DOCKER_GID} docker
     RUN addgroup --gid ${LOCAL_GID} ${LOCAL_USERNAME}
-    RUN useradd --create-home -g ${LOCAL_GID} -G docker,${DOCKER_GID}  -u ${LOCAL_UID} ${LOCAL_USERNAME}
-    RUN if [ "x$(getent group docker | cut -d: -f3)" != "x${DOCKER_GID}" ]; then \\
-          addgroup --gid ${DOCKER_GID} docker2 2>&1 ; \\
-          addgroup ${LOCAL_USERNAME} docker2 2>&1 ; \\
-      fi
+    RUN useradd --create-home -g ${LOCAL_GID} -u ${LOCAL_UID} ${LOCAL_USERNAME}
 
     ##
     # Run the container as the same calling user
@@ -108,24 +106,27 @@ EOF
 
     ##
     # Build the container. Remember, Docker is smart about caching layers so the above will likely only be built once!
-    # Output is only shown on error
-    # NOTE: This example "scopes" the container to the calling script name. This could easily be changed to APP_NAME or the
-    # calling directory name to prevent a new container being created for each shell script
+    # NOTE: Output is only shown on error, OR if it's taking longer than 2 seconds to complete the build
+    #
+    # The sleep
     ##
-    DOCKER_BUILD_OUT=$(docker build -t "${CONTAINER_PREFIX}_2musketeers:latest"  -f "${t_dockerfile}" .) || \
-     { ERRCODE=$?; echo "${DOCKER_BUILD_OUT}"; exit $ERRCODE; }
-    
-    ##
-    # Show the output if needed
-    ##
-    [ "x${DOCKER_BUILD_VERBOSE}" != "xfalse" ] && echo "${DOCKER_BUILD_OUT}"
+    echo -n '' >.docker-build-output
+    (docker build -t "${CONTAINER_PREFIX}_2musketeers:latest"  -f "${t_dockerfile}" .  &>>.docker-build-output || \
+      { ERRCODE=$?; kill $loggerpid ; cat .docker-build-output ; exit ${ERRCODE}; }) & #show output on failure
+    dockerbuild_pid=$!
+    ( sleep 2; tail --pid=$dockerbuild_pid --lines=+0 -f .docker-build-output ) & #wait 5 secs then start showing the docker build output
+    loggerpid=$!
+    wait $dockerbuild_pid
+    kill $loggerpid && wait $loggerpid 2>/dev/null #Cancel showing the docker build output (only when docker build was quicker)
+
     
     ##
     # Run docker and call the parent script..
     ##
-    exec docker run -it \
+    exec docker run --init -i \
       -v "${DIR}:${DIR}" \
-      --env-file <( env| cut -f1 -d= ) \
+      ${DOCKER_RUN_OPTS} \
+      --env-file <( env| cut -f1 -d= | grep -vwF -e JAVA_HOME -e HOME -e PATH -e TEMP -e TMP -e TMPDIR) \
       --workdir "${PWD}" \
       "${CONTAINER_PREFIX}_2musketeers:latest" \
       "${DIR}/${SCRIPT}" \
@@ -136,6 +137,6 @@ EOF
 # If we are not in a container, and we have been ask to run in local mode,
 # run the calling script in docker
 ##
-if [ "x${RUN_LOCAL}" = "xfalse" ] && [ "x$(is_container)" = "x1" ]; then
+if [[ "x${RUN_LOCAL}" = "xfalse" ]] && [[ "x$(is_container)" = "x1" ]]; then
   docker_run "$@"
 fi
