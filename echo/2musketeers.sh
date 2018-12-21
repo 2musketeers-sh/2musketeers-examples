@@ -112,7 +112,7 @@ EOF
     # NOTE: This example "scopes" the container to the calling script name. This could easily be changed to APP_NAME or the
     # calling directory name to prevent a new container being created for each shell script
     ##
-    DOCKER_BUILD_OUT=$(docker build -t "${CONTAINER_PREFIX}_docker:latest"  -f "${t_dockerfile}" .) || \
+    DOCKER_BUILD_OUT=$(docker build -t "${CONTAINER_PREFIX}_2musketeers:latest"  -f "${t_dockerfile}" .) || \
      { ERRCODE=$?; echo "${DOCKER_BUILD_OUT}"; exit $ERRCODE; }
     
     ##
@@ -127,7 +127,7 @@ EOF
       -v "${DIR}:${DIR}" \
       --env-file <( env| cut -f1 -d= ) \
       --workdir "${PWD}" \
-      "${CONTAINER_PREFIX}_docker:latest" \
+      "${CONTAINER_PREFIX}_2musketeers:latest" \
       "${DIR}/${SCRIPT}" \
       "$@"
 }
